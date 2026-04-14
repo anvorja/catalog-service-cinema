@@ -42,13 +42,16 @@ class ShowtimeResponse(BaseModel):
     capacity: int
     available_tickets: int
     theater_name: str
+    theater_location: str
 
     @classmethod
     def from_orm(cls, st):
         return cls(
             id=st.id, show_date=st.show_date, show_time=st.show_time,
             format=st.format, capacity=st.capacity,
-            available_tickets=st.available_tickets, theater_name=st.theater.name,
+            available_tickets=st.available_tickets,
+            theater_name=st.theater.name,
+            theater_location=st.theater.location,
         )
 
 
