@@ -1,0 +1,10 @@
+fastapi==0.116.1
+uvicorn==0.35.0
+sqlalchemy==2.0.36
+psycopg2-binary
+pydantic==2.11.7
+pydantic-settings==2.10.1
+redis==5.2.1
+python-dotenv==1.1.1
+aiokafka==0.11.0
+python-jose[cryptography]==3.3.0
