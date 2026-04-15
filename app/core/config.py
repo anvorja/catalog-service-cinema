@@ -18,6 +18,9 @@ class Settings(BaseSettings):
     KAFKA_API_SECRET: str = ""
     CATALOG_EVENT_IDEMPOTENCY_TTL: int = 60 * 60 * 24 * 7
 
+    # URL interna al booking-service (para consultar occupied-seats)
+    BOOKING_SERVICE_URL: str = "http://localhost:8004"
+
     # JWT — mismo secret que auth-service para validar tokens en ratings
     JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"

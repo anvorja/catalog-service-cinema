@@ -102,6 +102,9 @@ async def _handle_payment_success(payload: dict, db_factory) -> None:
         from app.core.cache import cache
         cache.delete_pattern("home:*")
         cache.delete_pattern(f"movie:{movie_id}:*")
+        # Invalidar cache de asientos ocupados para que el mapa refleje la venta
+        if showtime_id:
+            cache.delete(f"showtime:{showtime_id}:occupied_seats")
         logger.info(
             "available_tickets decrementado en cinema_catalog | order_id=%s | movie_id=%s qty=%s showtime_id=%s",
             order_id, movie_id, quantity, showtime_id,
@@ -160,6 +163,9 @@ async def _handle_order_refunded(payload: dict, db_factory) -> None:
         from app.core.cache import cache
         cache.delete_pattern("home:*")
         cache.delete_pattern(f"movie:{movie_id}:*")
+        # Invalidar cache de asientos ocupados para que el mapa refleje la devolución
+        if showtime_id:
+            cache.delete(f"showtime:{showtime_id}:occupied_seats")
         logger.info(
             "available_tickets restaurado en cinema_catalog | order_id=%s | movie_id=%s qty=%s showtime_id=%s",
             order_id, movie_id, quantity, showtime_id,

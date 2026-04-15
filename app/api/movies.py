@@ -11,7 +11,10 @@ from app.core.config import settings
 from app.core.auth import get_current_user_email
 from app.services.movie_service import MovieService
 from app.models.movie import MovieStatus
-from app.schemas.catalog import MovieListResponse, MovieDetailResponse, ShowtimeResponse, TheaterResponse, HomeResponse, RatingResponse
+from app.schemas.catalog import (
+    MovieListResponse, MovieDetailResponse, ShowtimeResponse, TheaterResponse,
+    HomeResponse, RatingResponse, SeatMapResponse,
+)
 
 router = APIRouter(prefix="/api/v1/movies", tags=["Movies"])
 
@@ -153,6 +156,28 @@ async def get_showtime_by_id(
     if not showtime:
         raise HTTPException(404, "Función no encontrada")
     return ShowtimeResponse.from_orm(showtime)
+
+
+@router.get("/{movie_id}/showtimes/{showtime_id}/seats", response_model=SeatMapResponse)
+async def get_seat_map(
+    movie_id: int,
+    showtime_id: int,
+    db: Session = Depends(get_db),
+):
+    """
+    Mapa en tiempo real de asientos para una función.
+    Combina layout (cache 1h) + ocupados de booking-service (cache 30s) + holds Redis (en vivo).
+    Retorna 404 si la función no existe o no tiene sala asignada.
+    """
+    result = await MovieService.get_seat_map(db, movie_id, showtime_id)
+    if result is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Función no encontrada")
+    if result.get("no_template"):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            "Esta función no tiene una sala asignada. Asigna un hall_template_id para usar el mapa de asientos.",
+        )
+    return result
 
 
 @router.get("/{movie_id}/theaters", response_model=List[TheaterResponse])

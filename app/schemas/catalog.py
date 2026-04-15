@@ -43,6 +43,8 @@ class ShowtimeResponse(BaseModel):
     available_tickets: int
     theater_name: str
     theater_location: str
+    hall_number: Optional[int] = None
+    hall_template_id: Optional[int] = None
 
     @classmethod
     def from_orm(cls, st):
@@ -52,7 +54,53 @@ class ShowtimeResponse(BaseModel):
             available_tickets=st.available_tickets,
             theater_name=st.theater.name,
             theater_location=st.theater.location,
+            hall_number=st.hall_number,
+            hall_template_id=st.hall_template_id,
         )
+
+
+class HallTemplateResponse(BaseModel):
+    id: int
+    name: str
+    rows: int
+    seats_per_row: int
+    total_seats: int
+    is_active: bool
+
+    @classmethod
+    def from_orm(cls, t):
+        return cls(
+            id=t.id, name=t.name, rows=t.rows,
+            seats_per_row=t.seats_per_row, total_seats=t.total_seats,
+            is_active=t.is_active,
+        )
+
+
+class SeatResponse(BaseModel):
+    code: str
+    number: int
+    type: str
+    status: str  # available | occupied | held
+
+
+class SeatRowResponse(BaseModel):
+    row: str
+    seats: List[SeatResponse]
+
+
+class SeatMapResponse(BaseModel):
+    showtime_id: int
+    movie_title: str
+    theater: str
+    hall_number: Optional[int]
+    show_date: date
+    show_time: str
+    format: str
+    total_seats: int
+    available: int
+    occupied: int
+    held: int
+    rows: List[SeatRowResponse]
 
 
 class MovieListResponse(BaseModel):
