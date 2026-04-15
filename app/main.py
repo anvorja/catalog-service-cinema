@@ -29,12 +29,14 @@ async def lifespan(_: FastAPI):
     import app.models.movie  # noqa: F401
     import app.models.theater  # noqa: F401
     import app.models.rating  # noqa: F401
-    from app.models.theater import HallTemplate, HallSeat  # noqa: F401
+    from app.models.theater import HallTemplate as _HT, HallSeat as _HS  # noqa: F401
+
+    # create_all PRIMERO — luego ya es seguro consultar las tablas nuevas
+    Base.metadata.create_all(bind=engine)
 
     # Crear plantilla por defecto si no existe
-    from app.core.database import SessionLocal as _SL
-    from app.models.theater import HallTemplate as _HT, HallSeat as _HS
     import string as _string
+    from app.core.database import SessionLocal as _SL
     with _SL() as _db:
         if not _db.query(_HT).first():
             tmpl = _HT(name="Estándar 10x10", rows=10, seats_per_row=10, is_active=True)
@@ -53,7 +55,6 @@ async def lifespan(_: FastAPI):
                     ))
             _db.commit()
             logger.info("Hall template por defecto creado (10x10 = 100 asientos)")
-    Base.metadata.create_all(bind=engine)
 
     from app.core.cache import cache
     if cache.is_healthy():
