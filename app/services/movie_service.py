@@ -15,7 +15,7 @@ from app.core.config import settings
 logger = logging.getLogger(__name__)
 
 _HALL_SEATS_TTL = 3600       # layout nunca cambia — cache 1 hora
-_OCCUPIED_SEATS_TTL = 30     # ocupados: TTL corto, se invalida por Kafka
+_OCCUPIED_SEATS_TTL = 5      # ocupados: TTL muy corto para minimizar ventana de doble venta
 
 
 class MovieService:
