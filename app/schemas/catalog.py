@@ -41,6 +41,7 @@ class ShowtimeResponse(BaseModel):
     format: ShowtimeFormat
     capacity: int
     available_tickets: int
+    theater_id: int
     theater_name: str
     theater_location: str
     hall_number: Optional[int] = None
@@ -52,6 +53,7 @@ class ShowtimeResponse(BaseModel):
             id=st.id, show_date=st.show_date, show_time=st.show_time,
             format=st.format, capacity=st.capacity,
             available_tickets=st.available_tickets,
+            theater_id=st.theater_id,
             theater_name=st.theater.name,
             theater_location=st.theater.location,
             hall_number=st.hall_number,
