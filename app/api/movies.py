@@ -224,6 +224,30 @@ async def get_movie_availability(movie_id: int, db: Session = Depends(get_db)):
     }
 
 
+@router.get("/{movie_id}/ratings", response_model=List[RatingResponse])
+async def get_movie_ratings(
+    movie_id: int,
+    skip: int = Query(default=0, ge=0),
+    limit: int = Query(default=20, ge=1, le=100),
+    db: Session = Depends(get_db),
+):
+    """Lista de calificaciones y reseñas de una película, ordenadas por fecha descendente."""
+    from app.models.rating import MovieRating
+
+    if not MovieService.get_movie_by_id(db, movie_id):
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Película no encontrada")
+
+    ratings = (
+        db.query(MovieRating)
+        .filter(MovieRating.movie_id == movie_id, MovieRating.is_active == True)
+        .order_by(MovieRating.created_at.desc())
+        .offset(skip)
+        .limit(limit)
+        .all()
+    )
+    return [RatingResponse.from_orm(r) for r in ratings]
+
+
 class RateMovieRequest(BaseModel):
     score: int = Field(..., ge=1, le=5, description="Calificación de 1 a 5 estrellas")
     review: Optional[str] = Field(None, max_length=500)
