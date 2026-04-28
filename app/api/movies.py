@@ -248,6 +248,23 @@ async def get_movie_ratings(
     return [RatingResponse.from_orm(r) for r in ratings]
 
 
+@router.get("/{movie_id}/my-rating", response_model=Optional[RatingResponse])
+async def get_my_rating(
+    movie_id: int,
+    db: Session = Depends(get_db),
+    user_email: str = Depends(get_current_user_email),
+):
+    """Retorna la calificación del usuario autenticado para esta película, o null si no ha calificado."""
+    from app.models.rating import MovieRating
+
+    existing = (
+        db.query(MovieRating)
+        .filter(MovieRating.movie_id == movie_id, MovieRating.user_email == user_email)
+        .first()
+    )
+    return RatingResponse.from_orm(existing) if existing else None
+
+
 class RateMovieRequest(BaseModel):
     score: int = Field(..., ge=1, le=5, description="Calificación de 1 a 5 estrellas")
     review: Optional[str] = Field(None, max_length=500)
@@ -273,14 +290,18 @@ async def rate_movie(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Película no encontrada")
 
     # Verificar que el usuario haya asistido a la película (al menos un QR escaneado)
+    # El endpoint interno también devuelve el primer nombre para persistirlo en la reseña
     check_url = (
         f"{settings.BOOKING_SERVICE_URL}/api/v1/purchases/internal/movies/{movie_id}/used-ticket"
     )
+    user_first_name = None
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(check_url, params={"user_email": user_email})
             resp.raise_for_status()
-            has_used_ticket = resp.json().get("has_used_ticket", False)
+            booking_data = resp.json()
+            has_used_ticket = booking_data.get("has_used_ticket", False)
+            user_first_name = booking_data.get("first_name")
     except Exception:
         has_used_ticket = False
 
@@ -298,15 +319,15 @@ async def rate_movie(
     )
 
     if existing:
-        existing.score = body.score
-        existing.review = body.review
-        db.commit()
-        db.refresh(existing)
-        return RatingResponse.from_orm(existing)
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            "Ya calificaste esta película. Solo se permite una calificación por usuario.",
+        )
 
     rating = MovieRating(
         movie_id=movie_id,
         user_email=user_email,
+        user_first_name=user_first_name,
         score=body.score,
         review=body.review,
     )

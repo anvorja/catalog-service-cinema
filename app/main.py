@@ -34,6 +34,15 @@ async def lifespan(_: FastAPI):
     # create_all PRIMERO — luego ya es seguro consultar las tablas nuevas
     Base.metadata.create_all(bind=engine)
 
+    # Migración inline: añadir user_first_name si la columna no existe todavía
+    from sqlalchemy import text as _text
+    with engine.connect() as _conn:
+        _conn.execute(_text(
+            "ALTER TABLE movie_ratings "
+            "ADD COLUMN IF NOT EXISTS user_first_name VARCHAR(100)"
+        ))
+        _conn.commit()
+
     # Crear plantilla por defecto si no existe
     import string as _string
     from app.core.database import SessionLocal as _SL

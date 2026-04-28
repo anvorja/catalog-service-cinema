@@ -18,6 +18,7 @@ class MovieRating(BaseModel):
 
     movie_id: Mapped[int] = mapped_column(Integer, nullable=False, index=True)
     user_email: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
+    user_first_name: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
     score: Mapped[int] = mapped_column(Integer, nullable=False)  # 1-5
     review: Mapped[Optional[str]] = mapped_column(String(500), nullable=True)
 

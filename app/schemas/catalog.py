@@ -140,14 +140,12 @@ class RatingResponse(BaseModel):
     score: int
     review: Optional[str]
     created_at: datetime
-    author: str  # parte local del email, e.g. "juan***" para privacidad
+    author: str  # primer nombre del usuario
 
     @classmethod
     def from_orm(cls, r):
-        local = r.user_email.split("@")[0]
-        # Muestra los 3 primeros caracteres y oculta el resto
-        masked = local[:3] + "***" if len(local) > 3 else local + "***"
-        return cls(score=r.score, review=r.review, created_at=r.created_at, author=masked)
+        author = r.user_first_name if r.user_first_name else "Usuario"
+        return cls(score=r.score, review=r.review, created_at=r.created_at, author=author)
 
 
 class MovieDetailResponse(BaseModel):
