@@ -238,13 +238,34 @@ async def rate_movie(
 ):
     """
     Califica una película (1-5 estrellas). Requiere autenticación.
-    Un usuario solo puede calificar una película una vez; re-enviar actualiza la calificación.
+    El usuario debe haber asistido a la película (QR utilizado en taquilla).
+    Un usuario solo puede tener una calificación por película; re-enviar actualiza la existente.
     """
+    import httpx
     from app.models.rating import MovieRating
 
     movie = MovieService.get_movie_by_id(db, movie_id)
     if not movie:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Película no encontrada")
+
+    # Verificar que el usuario haya asistido a la película (al menos un QR escaneado)
+    check_url = (
+        f"{settings.BOOKING_SERVICE_URL}/api/v1/purchases/internal/movies/{movie_id}/used-ticket"
+    )
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.get(check_url, params={"user_email": user_email})
+            resp.raise_for_status()
+            has_used_ticket = resp.json().get("has_used_ticket", False)
+    except Exception:
+        has_used_ticket = False
+
+    if not has_used_ticket:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Solo puedes calificar películas a las que hayas asistido. "
+            "Debes haber validado al menos un QR de esta película en taquilla.",
+        )
 
     existing = (
         db.query(MovieRating)
