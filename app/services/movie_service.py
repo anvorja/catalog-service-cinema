@@ -88,9 +88,23 @@ class MovieService:
     def get_movie_with_showtimes(
         db: Session, movie_id: int, include_inactive: bool = False
     ) -> Optional[Movie]:
+        # selectinload (no joinedload) en ambas colecciones: son independientes
+        # entre sí, así que un joinedload de las dos a la vez multiplica filas
+        # (producto cartesiano showtimes x theater_movies) — con una película
+        # con muchas funciones esto llegó a devolver ~10.000 filas duplicadas
+        # para un solo registro. selectinload las trae en queries separadas,
+        # sin duplicación.
+        #
+        # Además, el filtro por fecha/activo en Movie.showtimes evita cargar
+        # años de funciones ya pasadas (el generador de showtimes nunca las
+        # limpia, solo agrega hacia adelante — ver generate_showtimes.py):
+        # sin esto se cargaban miles de filas históricas irrelevantes para el
+        # detalle de una película, aunque el bug del join ya esté arreglado.
         q = db.query(Movie).options(
-            joinedload(Movie.showtimes).joinedload(MovieShowtime.theater),
-            joinedload(Movie.theater_movies).joinedload(TheaterMovie.theater),
+            selectinload(
+                Movie.showtimes.and_(MovieShowtime.show_date >= date.today(), MovieShowtime.is_active == True)
+            ).joinedload(MovieShowtime.theater),
+            selectinload(Movie.theater_movies).joinedload(TheaterMovie.theater),
         ).filter(Movie.id == movie_id)
         if not include_inactive:
             q = q.filter(Movie.is_active == True)
