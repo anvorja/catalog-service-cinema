@@ -297,7 +297,11 @@ async def rate_movie(
     user_first_name = None
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(check_url, params={"user_email": user_email})
+            resp = await client.get(
+                check_url,
+                params={"user_email": user_email},
+                headers={"X-Internal-Token": settings.INTERNAL_SERVICE_TOKEN},
+            )
             resp.raise_for_status()
             booking_data = resp.json()
             has_used_ticket = booking_data.get("has_used_ticket", False)

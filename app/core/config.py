@@ -21,6 +21,11 @@ class Settings(BaseSettings):
     # URL interna al booking-service (para consultar occupied-seats)
     BOOKING_SERVICE_URL: str = "http://localhost:8004"
 
+    # Secreto compartido para llamar a rutas /internal/* de booking-service.
+    # Debe coincidir con INTERNAL_SERVICE_TOKEN en booking-service-cinema —
+    # ver ARCHITECTURE.md, "Aislamiento de base de datos por servicio".
+    INTERNAL_SERVICE_TOKEN: str = ""
+
     # JWT — mismo secret que auth-service para validar tokens en ratings
     JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"

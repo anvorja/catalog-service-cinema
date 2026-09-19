@@ -68,6 +68,7 @@ Solo consume — no publica nada. Payloads completos en
 | `KAFKA_ENABLED` | Activa el consumer de Kafka | No (`false`) |
 | `KAFKA_BOOTSTRAP_SERVERS` / `KAFKA_API_KEY` / `KAFKA_API_SECRET` | Credenciales Confluent Cloud | Si `KAFKA_ENABLED=true` |
 | `BOOKING_SERVICE_URL` | Consultar asientos ocupados / marcar ticket usado en booking-service | No (default `http://localhost:8004`, en Docker usar `http://booking-service:8004`) |
+| `INTERNAL_SERVICE_TOKEN` | Header `X-Internal-Token` enviado al llamar a `/internal/*` de booking-service — debe coincidir con el mismo valor allá | No (`""`, pero sin esto booking-service responde 401) |
 | `JWT_SECRET` / `JWT_ALGORITHM` | Validar el JWT de `auth-service` en `/movies/{id}/rate` (mismo secret, no emite tokens propios) | No (`""` / `HS256`) |
 | `CACHE_HOME_TTL` / `CACHE_DEFAULT_TTL` / `CATALOG_EVENT_IDEMPOTENCY_TTL` | TTLs de cache y de deduplicación de eventos | No |
 
