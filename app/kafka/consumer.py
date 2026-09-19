@@ -1,8 +1,15 @@
 # app/kafka/consumer.py — catalog-service
 #
-# Consume payment.success → decrementa available_tickets en cinema_catalog.movies
-# y order.refunded → restaura el stock visible. Ambos handlers usan
-# idempotencia por order_id para tolerar reenvíos de Kafka.
+# Dos familias de eventos:
+#
+# 1. payment.success / order.refunded — decrementan/restauran available_tickets
+#    en cinema_catalog.movies y movie_showtimes. Idempotencia por order_id.
+#
+# 2. movie.* / theater.* / showtime.* — sincronizan la copia de lectura de
+#    cinema_catalog con cinema_admin (dueña real, ver ARCHITECTURE.md,
+#    "Aislamiento de base de datos por servicio", caso 1). Idempotencia por
+#    ON CONFLICT DO NOTHING/UPDATE sobre el id de cada entidad (mismo id en
+#    ambas bases — cinema_admin es la fuente, este consumer solo replica).
 #
 import asyncio
 import json
@@ -186,7 +193,7 @@ async def _handle_movie_updated(payload: dict, db_factory) -> None:
     if not movie_id:
         return
 
-    fields = {k: v for k, v in payload.items() if k != "movie_id" and v is not None}
+    fields = {k: v for k, v in payload.items() if k not in ("movie_id", "theater_ids") and v is not None}
     if not fields:
         return
 
@@ -205,10 +212,225 @@ async def _handle_movie_updated(payload: dict, db_factory) -> None:
     logger.info("cinema_catalog.movies actualizado por movie.updated | movie_id=%s", movie_id)
 
 
+async def _handle_movie_created(payload: dict, db_factory) -> None:
+    """
+    Recibe movie.created publicado por admin-service (dueño de cinema_admin,
+    ver ARCHITECTURE.md "Aislamiento de base de datos por servicio", caso 1).
+    Inserta la película completa (misma fila, mismo id) en cinema_catalog —
+    idempotente vía ON CONFLICT DO NOTHING. Los ids de teatro en
+    `theater_ids` se materializan como filas de theater_movies aparte, en su
+    propia transacción, para que un teatro que todavía no haya llegado (el
+    orden entre eventos con distinta key no está garantizado) no eche para
+    atrás la inserción de la película misma.
+    """
+    from sqlalchemy import text
+
+    movie_id = payload.get("movie_id")
+    if not movie_id:
+        logger.warning("movie.created payload sin movie_id: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(
+            text("""
+                INSERT INTO movies
+                    (id, title, description, genre, duration, rating, price,
+                     director, country, status, is_presale, release_date,
+                     max_capacity, available_tickets,
+                     poster_url, backdrop_url, detail_1_url, detail_2_url,
+                     is_active, created_at, updated_at)
+                VALUES
+                    (:movie_id, :title, :description, :genre, :duration, :rating, :price,
+                     :director, :country, :status, :is_presale, :release_date,
+                     :max_capacity, :available_tickets,
+                     :poster_url, :backdrop_url, :detail_1_url, :detail_2_url,
+                     true, now(), now())
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {
+                "movie_id":          movie_id,
+                "title":             payload.get("title", ""),
+                "description":       payload.get("description", ""),
+                "genre":             payload.get("genre"),
+                "duration":          payload.get("duration"),
+                "rating":            payload.get("rating"),
+                "price":             payload.get("price", 0.0),
+                "director":          payload.get("director", ""),
+                "country":           payload.get("country", ""),
+                "status":            payload.get("status", "IN_THEATERS"),
+                "is_presale":        payload.get("is_presale", False),
+                "release_date":      payload.get("release_date"),
+                "max_capacity":      payload.get("max_capacity", 0),
+                "available_tickets": payload.get("available_tickets", 0),
+                "poster_url":        payload.get("poster_url"),
+                "backdrop_url":      payload.get("backdrop_url"),
+                "detail_1_url":      payload.get("detail_1_url"),
+                "detail_2_url":      payload.get("detail_2_url"),
+            },
+        )
+        db.commit()
+    logger.info("Película insertada en cinema_catalog por movie.created | movie_id=%s", movie_id)
+
+    for theater_id in payload.get("theater_ids") or []:
+        try:
+            with db_factory() as db:
+                db.execute(
+                    text("""
+                        INSERT INTO theater_movies (theater_id, movie_id, capacity, available_tickets, is_active, created_at, updated_at)
+                        VALUES (:theater_id, :movie_id, 100, 100, true, now(), now())
+                        ON CONFLICT (theater_id, movie_id) DO NOTHING
+                    """),
+                    {"theater_id": theater_id, "movie_id": movie_id},
+                )
+                db.commit()
+        except Exception as e:
+            # Típicamente el teatro aún no llegó (distinta key de partición,
+            # sin orden garantizado con movie.created) — el mensaje ya se
+            # commiteó como leído; si hace falta reprocesar, es manual desde
+            # el log. No aborta el resto de teatros de esta película.
+            logger.error(
+                "No se pudo asociar theater_id=%s a movie_id=%s (¿theater.created aún no llegó?): %s",
+                theater_id, movie_id, e,
+            )
+
+    from app.core.cache import cache
+    cache.delete_pattern("home:*")
+
+
+async def _handle_movie_deactivated(payload: dict, db_factory) -> None:
+    """Marca la película como inactiva en cinema_catalog.movies."""
+    from sqlalchemy import text
+
+    movie_id = payload.get("movie_id")
+    if not movie_id:
+        logger.warning("movie.deactivated payload sin movie_id: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(
+            text("UPDATE movies SET is_active = false, updated_at = now() WHERE id = :movie_id"),
+            {"movie_id": movie_id},
+        )
+        db.commit()
+
+    from app.core.cache import cache
+    cache.delete_pattern("home:*")
+    cache.delete_pattern(f"movie:{movie_id}:*")
+    logger.info("Película desactivada en cinema_catalog por movie.deactivated | movie_id=%s", movie_id)
+
+
+async def _handle_theater_created(payload: dict, db_factory) -> None:
+    from sqlalchemy import text
+
+    theater_id = payload.get("theater_id")
+    if not theater_id:
+        logger.warning("theater.created payload sin theater_id: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(
+            text("""
+                INSERT INTO theaters (id, name, location, description, is_active, created_at, updated_at)
+                VALUES (:theater_id, :name, :location, :description, true, now(), now())
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {
+                "theater_id": theater_id,
+                "name": payload.get("name", ""),
+                "location": payload.get("location", ""),
+                "description": payload.get("description"),
+            },
+        )
+        db.commit()
+    logger.info("Teatro insertado en cinema_catalog por theater.created | theater_id=%s", theater_id)
+
+
+async def _handle_theater_toggled(payload: dict, db_factory) -> None:
+    from sqlalchemy import text
+
+    theater_id = payload.get("theater_id")
+    is_active = payload.get("is_active")
+    if not theater_id or is_active is None:
+        logger.warning("theater.toggled payload inválido: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(
+            text("UPDATE theaters SET is_active = :is_active, updated_at = now() WHERE id = :theater_id"),
+            {"theater_id": theater_id, "is_active": is_active},
+        )
+        db.commit()
+    logger.info("Teatro actualizado en cinema_catalog por theater.toggled | theater_id=%s is_active=%s", theater_id, is_active)
+
+
+async def _handle_showtime_created(payload: dict, db_factory) -> None:
+    from sqlalchemy import text
+
+    showtime_id = payload.get("showtime_id")
+    if not showtime_id:
+        logger.warning("showtime.created payload sin showtime_id: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(
+            text("""
+                INSERT INTO movie_showtimes
+                    (id, movie_id, theater_id, show_date, show_time, format,
+                     capacity, available_tickets, hall_number, hall_template_id,
+                     is_active, created_at, updated_at)
+                VALUES
+                    (:showtime_id, :movie_id, :theater_id, :show_date, :show_time, :format,
+                     :capacity, :available_tickets, :hall_number, :hall_template_id,
+                     true, now(), now())
+                ON CONFLICT (id) DO NOTHING
+            """),
+            {
+                "showtime_id":       showtime_id,
+                "movie_id":          payload.get("movie_id"),
+                "theater_id":        payload.get("theater_id"),
+                "show_date":         payload.get("show_date"),
+                "show_time":         payload.get("show_time"),
+                "format":            payload.get("format"),
+                "capacity":          payload.get("capacity", 100),
+                "available_tickets": payload.get("available_tickets", 100),
+                "hall_number":       payload.get("hall_number"),
+                "hall_template_id":  payload.get("hall_template_id"),
+            },
+        )
+        db.commit()
+
+    from app.core.cache import cache
+    cache.delete_pattern("home:*")
+    logger.info("Función insertada en cinema_catalog por showtime.created | showtime_id=%s", showtime_id)
+
+
+async def _handle_showtime_deleted(payload: dict, db_factory) -> None:
+    from sqlalchemy import text
+
+    showtime_id = payload.get("showtime_id")
+    if not showtime_id:
+        logger.warning("showtime.deleted payload sin showtime_id: %s", payload)
+        return
+
+    with db_factory() as db:
+        db.execute(text("DELETE FROM movie_showtimes WHERE id = :showtime_id"), {"showtime_id": showtime_id})
+        db.commit()
+
+    from app.core.cache import cache
+    cache.delete_pattern("home:*")
+    logger.info("Función eliminada en cinema_catalog por showtime.deleted | showtime_id=%s", showtime_id)
+
+
 _HANDLERS = {
-    "payment.success": _handle_payment_success,
-    "order.refunded":  _handle_order_refunded,
-    "movie.updated":   _handle_movie_updated,
+    "payment.success":    _handle_payment_success,
+    "order.refunded":     _handle_order_refunded,
+    "movie.updated":      _handle_movie_updated,
+    "movie.created":      _handle_movie_created,
+    "movie.deactivated":  _handle_movie_deactivated,
+    "theater.created":    _handle_theater_created,
+    "theater.toggled":    _handle_theater_toggled,
+    "showtime.created":   _handle_showtime_created,
+    "showtime.deleted":   _handle_showtime_deleted,
 }
 
 

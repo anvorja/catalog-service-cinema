@@ -9,11 +9,15 @@ y calificaciones de usuarios. El esquema se crea con `Base.metadata.create_all`
 al arrancar (no usa Alembic pese a tenerlo en `requirements.txt`) — ver
 `../db_asuntos/docDBcambios.md`.
 
-No gestiona altas/bajas de películas ni CORS de administración — eso es de
-`admin-service`, que **comparte esta misma base de datos** (`cinema_catalog`)
-como dueño de escritura para el ciclo de vida de películas. catalog-service
-solo lee ese estado y lo sirve al público, además de mantener por su cuenta
-`available_tickets` (vía eventos) y las calificaciones.
+No gestiona altas/bajas de películas, teatros ni funciones — eso es de
+`admin-service`, dueño de `cinema_admin`. Hasta 2026-09-19 `catalog-service`
+compartía físicamente `cinema_catalog` con `admin-service` (comparte-por-BD);
+desde esa fecha `cinema_catalog` es una **copia de lectura propia**, sincronizada
+por eventos Kafka en vez de una conexión compartida (ver `../ARCHITECTURE.md`,
+"Aislamiento de base de datos por servicio", caso 1). `hall_templates`,
+`hall_seats` y `movie_ratings` sí son dominio 100% propio (`admin-service`
+nunca los tocó, antes ni ahora), igual que mantener `available_tickets` al
+día vía los eventos de compra/reembolso.
 
 ## Stack
 
@@ -54,10 +58,20 @@ Solo consume — no publica nada. Payloads completos en
 |---|---|
 | `payment.success` | Descuenta `available_tickets` (idempotente por `order_id`) |
 | `order.refunded` | Restaura `available_tickets` |
-| `movie.updated` | Sincroniza cambios de película hechos desde `admin-service`, invalida cache |
+| `movie.created` | Inserta la película completa (mismo `id` que en `cinema_admin`) y materializa `theater_movies` para cada id en `theater_ids` |
+| `movie.updated` | Sincroniza los campos que cambiaron, invalida cache |
+| `movie.deactivated` | Marca la película como inactiva |
+| `theater.created` | Inserta el teatro (mismo `id`) |
+| `theater.toggled` | Sincroniza `is_active` del teatro |
+| `showtime.created` | Inserta la función (mismo `id`) |
+| `showtime.deleted` | Elimina la función |
 
-`movie.created` y `movie.deactivated` (también publicados por `admin-service`)
-**no** los consume: al compartir la misma BD, ya ve esos cambios directamente.
+Los 6 últimos son nuevos desde 2026-09-19 — antes `catalog-service` veía esos
+cambios directo porque compartía la BD con `admin-service` (ver
+`../ARCHITECTURE.md`, Decisión 6.2, para el detalle del diseño: por qué el
+payload de `movie.created`/`movie.updated` se amplió al `Movie` completo,
+por qué los eventos van con `key` = id de la entidad, y la trampa de que
+Postgres guarda el *nombre* del enum, no el `.value`).
 
 ## Variables de entorno clave
 
@@ -79,7 +93,7 @@ Render) se ignoran en vez de romper el arranque.
 
 ## Dependencias
 
-- **admin-service**: dueño de escritura de `cinema_catalog` (comparte BD).
+- **admin-service**: Kafka (`movie.*`/`theater.*`/`showtime.*`) — dueño real de este dominio, `catalog-service` solo mantiene la copia de lectura. Ya no comparte base de datos con él.
 - **booking-service**: HTTP, para asientos ocupados y marcar tickets usados.
 - **auth-service**: indirecta, vía JWT compartido (no hay llamada HTTP).
 
