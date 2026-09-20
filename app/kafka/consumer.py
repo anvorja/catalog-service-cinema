@@ -444,7 +444,7 @@ async def _run_consumer(db_factory) -> None:
         sasl_plain_username=settings.KAFKA_API_KEY,
         sasl_plain_password=settings.KAFKA_API_SECRET,
         ssl_context=ssl_context,
-        group_id="catalog-service-group",
+        group_id=settings.KAFKA_GROUP_ID,
         # payment.success y order.refunded no deben reaplicarse al arrancar un despliegue nuevo.
         auto_offset_reset="latest",
         enable_auto_commit=False,

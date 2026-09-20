@@ -16,6 +16,11 @@ class Settings(BaseSettings):
     KAFKA_BOOTSTRAP_SERVERS: str = ""
     KAFKA_API_KEY: str = ""
     KAFKA_API_SECRET: str = ""
+    # Default = group_id histórico de producción, sin variable nueva en Render.
+    # Local lo sobreescribe con sufijo "-local" — dev y prod comparten el
+    # mismo cluster de Confluent Cloud, y sin distinguir el group_id ambos
+    # entornos terminan en el MISMO grupo de consumidores.
+    KAFKA_GROUP_ID: str = "catalog-service-group"
     CATALOG_EVENT_IDEMPOTENCY_TTL: int = 60 * 60 * 24 * 7
 
     # URL interna al booking-service (para consultar occupied-seats)
