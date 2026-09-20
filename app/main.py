@@ -4,6 +4,7 @@ import logging
 from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from prometheus_fastapi_instrumentator import Instrumentator
 
 from app.api.movies import router as movies_router
 from app.api.theaters import router as theaters_router
@@ -92,6 +93,9 @@ app = FastAPI(
     description="Movies, theaters and showtimes catalog",
     lifespan=lifespan,
 )
+
+# Métricas de Prometheus (latencia/conteo por endpoint) en /metrics
+Instrumentator().instrument(app).expose(app)
 
 app.add_middleware(
     CORSMiddleware,
