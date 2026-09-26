@@ -8,7 +8,7 @@ from sqlalchemy import desc, or_, and_
 import httpx
 
 from app.models.movie import Movie, MovieStatus
-from app.models.theater import Theater, TheaterMovie, MovieShowtime, HallTemplate, HallSeat
+from app.models.theater import Theater, TheaterMovie, MovieShowtime, HallSeat
 from app.core.cache import cache
 from app.core.config import settings
 

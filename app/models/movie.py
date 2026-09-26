@@ -1,10 +1,9 @@
 # app/models/movie.py
 from datetime import date
 from typing import List, TYPE_CHECKING
-from urllib.parse import urlparse
 import enum
 
-from sqlalchemy.orm import Mapped, mapped_column, relationship, validates
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 from sqlalchemy import String, Integer, Float, Boolean, Date, Enum
 
 from .base import BaseModel
