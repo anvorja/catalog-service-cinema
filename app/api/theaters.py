@@ -2,7 +2,7 @@
 from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
-from datetime import date, datetime
+from datetime import datetime
 
 from app.core.database import get_db
 from app.models.theater import Theater, TheaterMovie, MovieShowtime

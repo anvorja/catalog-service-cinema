@@ -1,6 +1,6 @@
 # app/models/theater.py
 from typing import List, Optional, TYPE_CHECKING
-from datetime import datetime, date
+from datetime import date
 import enum
 from sqlalchemy import String, Integer, Boolean, ForeignKey, Index, Date, Enum, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
